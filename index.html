@@ -1,0 +1,958 @@
+<!DOCTYPE html>
+<html lang="en">
+
+  <head>
+    <meta charset="UTF-8">
+    <title>Ultra-Realistic 3D Bug Challenge</title>
+    
+
+  </head>
+    
+  <body>
+  <!DOCTYPE html>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Défi des Bugs Ultra Réaliste 3D</title>
+  <style>
+    body,
+    html {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: Arial, sans-serif;
+    }
+
+    #game-container {
+      width: 100%;
+      height: 100vh;
+      position: relative;
+    }
+
+    #score {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      color: white;
+      font-size: 24px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.5);
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    #difficulty {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      background: rgba(0, 0, 0, 0.5);
+      color: white;
+      padding: 10px;
+      border-radius: 10px;
+    }
+
+    .splat {
+      position: fixed;
+      pointer-events: none;
+      z-index: 9998;
+      width: 120px;
+      height: 120px;
+      background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><radialGradient id="splatterGrad" cx="50%" cy="50%" r="50%" fx="45%" fy="45%"><stop offset="0%" style="stop-color:%23660000;stop-opacity:1" /><stop offset="70%" style="stop-color:%23880000;stop-opacity:0.9" /><stop offset="100%" style="stop-color:%23AA0000;stop-opacity:0" /></radialGradient></defs><g><path fill="url(%23splatterGrad)" d="M50,20 Q75,15 85,35 T90,50 T80,70 T60,80 T40,75 T20,60 T15,40 T25,25 Z"><animate attributeName="d" dur="0.3s" repeatCount="1" values="M50,50 Q50,50 50,50 T50,50 T50,50 T50,50 T50,50 T50,50 T50,50 T50,50;M50,20 Q75,15 85,35 T90,50 T80,70 T60,80 T40,75 T20,60 T15,40 T25,25" /></path></g></svg>');
+      background-size: contain;
+      background-repeat: no-repeat;
+      mix-blend-mode: multiply;
+      transform-origin: center center;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="game-container">
+    <div id="score">Score: 0</div>
+    <select id="difficulty" aria-label="Sélection de difficulté">
+      <option value="easy">Facile</option>
+      <option value="medium" selected>Moyen</option>
+      <option value="hard">Difficile</option>
+    </select>
+  </div>
+
+  <div id="splat"></div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    class Bug3DGame {
+      constructor() {
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+        this.bugs = [];
+        this.score = 0;
+        this.scoreElement = document.getElementById('score');
+        this.difficultySelect = document.getElementById('difficulty');
+        this.ground = null;
+        this.groundSize = 10; // Augmentation de la taille du sol à 10 (taille de la pièce)
+        this.splatElement = document.getElementById('splat');
+        this.splatPool = [];
+        this.maxSplats = 20; // Nombre maximum de taches simultanées
+        this.furniture = []; // Liste des meubles pour la détection de collision
+
+        this.initScene();
+        this.setupLights();
+        this.setupCamera();
+        this.createGround();
+        this.createBugs();
+        this.setupEventListeners();
+        this.animate();
+        this.initSplatPool();
+      }
+
+      initScene() {
+        this.scene = new THREE.Scene();
+
+        // Création des murs et du décor
+        this.createRoom();
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('game-container').appendChild(this.renderer.domElement);
+      }
+
+      createRoom() {
+        // Création du sol en parquet
+        const floorTexture = this.createWoodTexture();
+        const floorGeometry = new THREE.PlaneGeometry(10, 10);
+        const floorMaterial = new THREE.MeshStandardMaterial({
+          map: floorTexture,
+          roughness: 0.8,
+          metalness: 0.2
+        });
+        this.ground = new THREE.Mesh(floorGeometry, floorMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.position.y = -0.2;
+        this.ground.receiveShadow = true;
+        this.scene.add(this.ground);
+
+        // Mur du fond
+        const wallTexture = this.createWallTexture();
+        const backWallGeometry = new THREE.PlaneGeometry(10, 6);
+        const wallMaterial = new THREE.MeshStandardMaterial({
+          map: wallTexture,
+          roughness: 0.9,
+          metalness: 0.1
+        });
+        const backWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+        backWall.position.z = -5;
+        backWall.position.y = 2.8;
+        this.scene.add(backWall);
+
+        // Mur gauche
+        const leftWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+        leftWall.position.x = -5;
+        leftWall.position.y = 2.8;
+        leftWall.rotation.y = Math.PI / 2;
+        this.scene.add(leftWall);
+
+        // Mur droit
+        const rightWall = new THREE.Mesh(backWallGeometry, wallMaterial);
+        rightWall.position.x = 5;
+        rightWall.position.y = 2.8;
+        rightWall.rotation.y = -Math.PI / 2;
+        this.scene.add(rightWall);
+
+        // Ajout de plinthes
+        this.createSkirting();
+
+        // Ajout de décorations
+        this.createDecorations();
+      }
+
+      createWoodTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Couleur de base du bois
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Création des lattes de parquet
+        const planksPerRow = 8;
+        const plankWidth = canvas.width / planksPerRow;
+        const plankHeight = canvas.height / 4;
+
+        for (let row = 0; row < 4; row++) {
+          for (let col = 0; col < planksPerRow; col++) {
+            // Variation de couleur pour chaque latte
+            const brightness = 0.8 + Math.random() * 0.4;
+            ctx.fillStyle = `rgba(139, 69, 19, ${brightness})`;
+            ctx.fillRect(
+              col * plankWidth,
+              row * plankHeight,
+              plankWidth - 1,
+              plankHeight - 1
+            );
+
+            // Ajout de grain de bois
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.1)';
+            for (let i = 0; i < 5; i++) {
+              ctx.beginPath();
+              ctx.moveTo(col * plankWidth, row * plankHeight + Math.random() * plankHeight);
+              ctx.lineTo((col + 1) * plankWidth, row * plankHeight + Math.random() * plankHeight);
+              ctx.stroke();
+            }
+          }
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(2, 2);
+        return texture;
+      }
+
+      createWallTexture() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        // Couleur de base du mur
+        ctx.fillStyle = '#F5F5F5';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Ajout de texture subtile
+        for (let i = 0; i < 5000; i++) {
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height;
+          const size = Math.random() * 2;
+          ctx.fillStyle = `rgba(0, 0, 0, ${Math.random() * 0.03})`;
+          ctx.beginPath();
+          ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(2, 2);
+        return texture;
+      }
+
+      createSkirting() {
+        // Matériau commun pour toutes les plinthes - couleur plus visible
+        const skirtingMaterial = new THREE.MeshStandardMaterial({
+          color: 0x8B4513, // Couleur bois foncé pour un meilleur contraste
+          roughness: 0.7,
+          metalness: 0.1
+        });
+
+        // Dimensions de la pièce et des plinthes
+        const roomSize = 10; // Taille de la pièce
+        const skirtingHeight = 0.3; // Hauteur augmentée
+        const skirtingDepth = 0.1; // Profondeur augmentée
+        const yPosition = 0; // Position Y surélevée
+        const insetDistance = 0.15; // Distance de décalage vers l'intérieur
+
+        // Créer les plinthes principales (une par mur)
+
+        // Plinthe mur arrière (une seule pièce)
+        const backSkirtingGeometry = new THREE.BoxGeometry(roomSize - 2 * insetDistance, skirtingHeight, skirtingDepth);
+        const backSkirting = new THREE.Mesh(backSkirtingGeometry, skirtingMaterial);
+        backSkirting.position.set(0, yPosition, -roomSize / 2 + skirtingDepth + insetDistance);
+        backSkirting.castShadow = true;
+        backSkirting.receiveShadow = true;
+        this.scene.add(backSkirting);
+
+        // Plinthe mur gauche (une seule pièce)
+        const leftSkirtingGeometry = new THREE.BoxGeometry(roomSize - 2 * insetDistance, skirtingHeight, skirtingDepth);
+        const leftSkirting = new THREE.Mesh(leftSkirtingGeometry, skirtingMaterial);
+        leftSkirting.position.set(-roomSize / 2 + skirtingDepth + insetDistance, yPosition, 0);
+        leftSkirting.rotation.y = Math.PI / 2;
+        leftSkirting.castShadow = true;
+        leftSkirting.receiveShadow = true;
+        this.scene.add(leftSkirting);
+
+        // Plinthe mur droit (une seule pièce)
+        const rightSkirtingGeometry = new THREE.BoxGeometry(roomSize - 2 * insetDistance, skirtingHeight, skirtingDepth);
+        const rightSkirting = new THREE.Mesh(rightSkirtingGeometry, skirtingMaterial);
+        rightSkirting.position.set(roomSize / 2 - skirtingDepth - insetDistance, yPosition, 0);
+        rightSkirting.rotation.y = Math.PI / 2;
+        rightSkirting.castShadow = true;
+        rightSkirting.receiveShadow = true;
+        this.scene.add(rightSkirting);
+
+        // Plinthe mur avant (une seule pièce)
+        const frontSkirtingGeometry = new THREE.BoxGeometry(roomSize - 2 * insetDistance, skirtingHeight, skirtingDepth);
+        const frontSkirting = new THREE.Mesh(frontSkirtingGeometry, skirtingMaterial);
+        frontSkirting.position.set(0, yPosition, roomSize / 2 - skirtingDepth - insetDistance);
+        frontSkirting.castShadow = true;
+        frontSkirting.receiveShadow = true;
+        this.scene.add(frontSkirting);
+      }
+
+      createDecorations() {
+        // Création d'un tableau sur le mur
+        const frameGeometry = new THREE.BoxGeometry(1.5, 1, 0.1);
+        const frameMaterial = new THREE.MeshStandardMaterial({
+          color: 0x8B4513,
+          roughness: 0.8,
+          metalness: 0.2
+        });
+        const frame = new THREE.Mesh(frameGeometry, frameMaterial);
+        frame.position.set(0, 2.5, -4.9);
+        this.scene.add(frame);
+
+        // Création d'une petite table
+        const tableGeometry = new THREE.BoxGeometry(1, 0.8, 0.5);
+        const tableMaterial = new THREE.MeshStandardMaterial({
+          color: 0x8B4513,
+          roughness: 0.8,
+          metalness: 0.2
+        });
+        const table = new THREE.Mesh(tableGeometry, tableMaterial);
+        table.position.set(-4, 0.4, -4);
+        this.scene.add(table);
+        // Ajouter la table à la liste des meubles pour la détection de collision
+        this.furniture.push({
+          position: table.position.clone(),
+          size: new THREE.Vector3(1, 0.8, 0.5),
+          object: table
+        });
+
+        // Création d'un vase sur la table
+        const vaseGeometry = new THREE.CylinderGeometry(0.1, 0.15, 0.4, 32);
+        const vaseMaterial = new THREE.MeshStandardMaterial({
+          color: 0x4169E1,
+          roughness: 0.2,
+          metalness: 0.8
+        });
+        const vase = new THREE.Mesh(vaseGeometry, vaseMaterial);
+        vase.position.set(-4, 0.8, -4);
+        this.scene.add(vase);
+      }
+
+      setupLights() {
+        // Lumière ambiante douce
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        this.scene.add(ambientLight);
+
+        // Lumière principale (comme une fenêtre)
+        const mainLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        mainLight.position.set(5, 5, 5);
+        mainLight.castShadow = true;
+        mainLight.shadow.mapSize.width = 2048;
+        mainLight.shadow.mapSize.height = 2048;
+        this.scene.add(mainLight);
+
+        // Lumière d'appoint pour les coins
+        const fillLight = new THREE.PointLight(0xffffff, 0.4);
+        fillLight.position.set(-3, 4, -3);
+        this.scene.add(fillLight);
+
+        // Lumière chaude comme une lampe
+        const lampLight = new THREE.PointLight(0xFFD700, 0.3);
+        lampLight.position.set(3, 3, -3);
+        this.scene.add(lampLight);
+      }
+
+      setupCamera() {
+        this.camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        this.camera.position.set(0, 2, 4);
+        this.camera.lookAt(0, 0, 0);
+      }
+
+      createGround() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 1024; // Augmentation de la résolution
+        canvas.height = 1024;
+        const ctx = canvas.getContext('2d');
+
+        // Fond de couleur bois clair
+        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+        gradient.addColorStop(0, '#8B4513');
+        gradient.addColorStop(0.5, '#A0522D');
+        gradient.addColorStop(1, '#8B4513');
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Création du quadrillage principal
+        ctx.strokeStyle = '#654321';
+        ctx.lineWidth = 1;
+
+        // Grille principale
+        const gridSize = 50;
+        const cellSize = canvas.width / gridSize;
+
+        for (let i = 0; i <= gridSize; i++) {
+          // Lignes horizontales
+          ctx.beginPath();
+          ctx.moveTo(0, i * cellSize);
+          ctx.lineTo(canvas.width, i * cellSize);
+          ctx.globalAlpha = i % 5 === 0 ? 0.4 : 0.2; // Lignes plus visibles tous les 5 carreaux
+          ctx.stroke();
+
+          // Lignes verticales
+          ctx.beginPath();
+          ctx.moveTo(i * cellSize, 0);
+          ctx.lineTo(i * cellSize, canvas.height);
+          ctx.globalAlpha = i % 5 === 0 ? 0.4 : 0.2;
+          ctx.stroke();
+        }
+
+        // Ajout de motifs de grain de bois
+        ctx.globalAlpha = 0.1;
+        for (let i = 0; i < 200; i++) {
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height;
+          const length = 50 + Math.random() * 150;
+          const curve = 20 + Math.random() * 30;
+
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.quadraticCurveTo(
+            x + length / 2,
+            y + (Math.random() - 0.5) * curve,
+            x + length,
+            y + (Math.random() - 0.5) * curve / 2
+          );
+          ctx.strokeStyle = '#3E2723';
+          ctx.lineWidth = 1 + Math.random() * 2;
+          ctx.stroke();
+        }
+
+        // Ajout de quelques variations de couleur pour la texture
+        ctx.globalAlpha = 0.05;
+        for (let i = 0; i < 1000; i++) {
+          const x = Math.random() * canvas.width;
+          const y = Math.random() * canvas.height;
+          const size = 2 + Math.random() * 8;
+
+          ctx.beginPath();
+          ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.fillStyle = Math.random() > 0.5 ? '#5D4037' : '#8D6E63';
+          ctx.fill();
+        }
+
+        // Création de la texture et du matériau
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(2, 2);
+
+        const groundMaterial = new THREE.MeshStandardMaterial({
+          map: texture,
+          roughness: 0.8,
+          metalness: 0.2,
+          bumpMap: texture,
+          bumpScale: 0.05,
+        });
+
+        // Création du sol avec une géométrie plus grande
+        const groundGeometry = new THREE.PlaneGeometry(10, 10, 1, 1);
+        this.ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        this.ground.rotation.x = -Math.PI / 2;
+        this.ground.position.y = -0.2;
+        this.ground.receiveShadow = true;
+
+        this.scene.add(this.ground);
+      }
+
+      createBugGeometry() {
+        const bugGroup = new THREE.Group();
+        bugGroup.isClickable = true; // Marquer le groupe comme cliquable
+
+        // Corps principal avec une forme plus organique et brillante
+        const bodyGeometry = new THREE.SphereGeometry(0.2, 32, 32);
+        bodyGeometry.scale(1, 0.5, 1.3);
+
+        const bugMaterial = new THREE.MeshPhysicalMaterial({
+          color: 0xFF0000,
+          metalness: 0.2,
+          roughness: 0.3,
+          clearcoat: 0.8,
+          clearcoatRoughness: 0.2,
+          envMapIntensity: 1
+        });
+
+        const body = new THREE.Mesh(bodyGeometry, bugMaterial);
+        body.castShadow = true;
+        bugGroup.add(body);
+
+        // Ligne de séparation centrale légèrement plus visible
+        const separatorGeometry = new THREE.BoxGeometry(0.01, 0.015, 0.35); // Hauteur augmentée
+        const separatorMaterial = new THREE.MeshStandardMaterial({
+          color: 0x000000,
+          metalness: 0.1,
+          roughness: 0.9,
+          envMapIntensity: 0.5 // Ajout d'un peu de brillance
+        });
+        const separator = new THREE.Mesh(separatorGeometry, separatorMaterial);
+        separator.position.y = 0.1; // Légèrement plus haut
+        bugGroup.add(separator);
+
+        // Points noirs avec relief - positions ajustées et nombre réduit
+        const spotPositions = [
+          [-0.08, 0.08, 0.1],    // Gauche avant
+          [0.08, 0.08, 0.1],     // Droite avant
+          [-0.1, 0.08, -0.05],   // Gauche milieu
+          [0.1, 0.08, -0.05],    // Droite milieu
+          [0, 0.08, 0]           // Centre
+        ];
+
+        const spotGeometry = new THREE.SphereGeometry(0.035, 16, 16); // Légèrement plus petits
+        const spotMaterial = new THREE.MeshStandardMaterial({
+          color: 0x000000,
+          metalness: 0.2,
+          roughness: 0.8
+        });
+
+        spotPositions.forEach(pos => {
+          const spot = new THREE.Mesh(spotGeometry, spotMaterial);
+          spot.position.set(...pos);
+          spot.scale.set(1, 0.25, 1); // Plus aplatis contre la carapace
+          bugGroup.add(spot);
+        });
+
+        // Tête plus détaillée avec yeux
+        const headGroup = new THREE.Group();
+        const headGeometry = new THREE.SphereGeometry(0.08, 24, 24);
+        const headMaterial = new THREE.MeshStandardMaterial({
+          color: 0x000000,
+          metalness: 0.3,
+          roughness: 0.7
+        });
+        const head = new THREE.Mesh(headGeometry, headMaterial);
+        head.scale.set(1.2, 0.8, 0.8);
+        headGroup.add(head);
+
+        // Yeux
+        const eyeGeometry = new THREE.SphereGeometry(0.02, 16, 16);
+        const eyeMaterial = new THREE.MeshStandardMaterial({
+          color: 0xFFFFFF,
+          metalness: 0.2,
+          roughness: 0.3
+        });
+
+        [-0.04, 0.04].forEach(x => {
+          const eye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+          eye.position.set(x, 0, 0.04);
+          headGroup.add(eye);
+
+          // Pupille
+          const pupilGeometry = new THREE.SphereGeometry(0.01, 8, 8);
+          const pupilMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+          const pupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
+          pupil.position.z = 0.015;
+          eye.add(pupil);
+        });
+
+        headGroup.position.set(0, 0, 0.25);
+        bugGroup.add(headGroup);
+
+        // Antennes plus naturelles
+        const createAntenna = (x) => {
+          const antennaGroup = new THREE.Group();
+
+          // Base de l'antenne
+          const baseGeometry = new THREE.CylinderGeometry(0.005, 0.003, 0.15, 8);
+          const baseMesh = new THREE.Mesh(baseGeometry, headMaterial);
+          baseMesh.rotation.x = Math.PI / 3;
+          antennaGroup.add(baseMesh);
+
+          // Bout de l'antenne
+          const tipGeometry = new THREE.SphereGeometry(0.006, 8, 8);
+          const tipMesh = new THREE.Mesh(tipGeometry, headMaterial);
+          tipMesh.position.y = 0.08;
+          antennaGroup.add(tipMesh);
+
+          antennaGroup.position.set(x, 0.02, 0.28);
+          return antennaGroup;
+        };
+
+        [-0.04, 0.04].forEach(x => {
+          bugGroup.add(createAntenna(x));
+        });
+
+        // Pattes articulées
+        const createLeg = (x, z, angleZ) => {
+          const legGroup = new THREE.Group();
+
+          // Segment supérieur
+          const upperLeg = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.01, 0.008, 0.12),
+            headMaterial
+          );
+          upperLeg.rotation.x = Math.PI / 2;
+          legGroup.add(upperLeg);
+
+          // Segment du milieu
+          const middleLeg = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.008, 0.006, 0.1),
+            headMaterial
+          );
+          middleLeg.position.y = -0.1;
+          middleLeg.rotation.x = Math.PI / 6;
+          legGroup.add(middleLeg);
+
+          // Segment inférieur (pied)
+          const footLeg = new THREE.Mesh(
+            new THREE.CylinderGeometry(0.006, 0.004, 0.08),
+            headMaterial
+          );
+          footLeg.position.y = -0.18;
+          footLeg.rotation.x = Math.PI / 4;
+          legGroup.add(footLeg);
+
+          legGroup.position.set(x, -0.05, z);
+          legGroup.rotation.z = angleZ;
+          return legGroup;
+        };
+
+        // Création des 6 pattes
+        [-0.15, 0.15].forEach(x => {
+          [0.15, 0, -0.15].forEach(z => {
+            bugGroup.add(createLeg(x, z, x < 0 ? Math.PI / 4 : -Math.PI / 4));
+          });
+        });
+
+        return bugGroup;
+      }
+
+      createBugs(count = 5) {
+        for (let i = 0; i < count; i++) {
+          const bug = this.createBugGeometry();
+
+          // Position aléatoire sur le sol avec une marge de sécurité
+          const halfSize = this.groundSize / 2 - 0.5; // Marge de sécurité pour éviter que les insectes ne sortent du sol
+          bug.position.x = (Math.random() - 0.5) * 2 * halfSize;
+          bug.position.z = (Math.random() - 0.5) * 2 * halfSize;
+          bug.position.y = 0; // Sur le sol
+
+          // Rotation aléatoire
+          bug.rotation.y = Math.random() * Math.PI * 2;
+
+          // Vitesse aléatoire (uniquement sur le plan XZ)
+          const speed = 0.01 + Math.random() * 0.02;
+          const angle = Math.random() * Math.PI * 2;
+          bug.velocity = new THREE.Vector3(
+            Math.cos(angle) * speed,
+            0, // Pas de mouvement vertical
+            Math.sin(angle) * speed
+          );
+
+          // Propriétés d'animation
+          bug.legPhase = Math.random() * Math.PI * 2; // Phase aléatoire pour l'animation des pattes
+          bug.walkSpeed = 0.05 + Math.random() * 0.05; // Vitesse de l'animation de marche
+
+          this.scene.add(bug);
+          this.bugs.push(bug);
+        }
+      }
+
+      setupEventListeners() {
+        window.addEventListener('resize', this.onWindowResize.bind(this));
+        this.difficultySelect.addEventListener('change', this.changeDifficulty.bind(this));
+
+        // Suivi du curseur
+        document.addEventListener('mousemove', (e) => this.updateHandPosition(e));
+
+        // Animation du clic
+        document.addEventListener('mousedown', () => this.animateHandClick());
+
+        // Gestion du clic pour les coccinelles
+        this.renderer.domElement.addEventListener('click', (e) => this.onMouseClick(e));
+      }
+
+      changeDifficulty(event) {
+        const difficulty = event.target.value;
+        let speedMultiplier = 1;
+
+        switch (difficulty) {
+          case 'easy':
+            speedMultiplier = 0.5;
+            break;
+          case 'medium':
+            speedMultiplier = 1;
+            break;
+          case 'hard':
+            speedMultiplier = 2;
+            break;
+        }
+
+        // Appliquer le multiplicateur à tous les bugs
+        this.bugs.forEach(bug => {
+          bug.velocity.multiplyScalar(speedMultiplier);
+          bug.walkSpeed *= speedMultiplier;
+        });
+      }
+
+      onWindowResize() {
+        this.camera.aspect = window.innerWidth / window.innerHeight;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      initSplatPool() {
+        // Supprimer l'ancien élément splat s'il existe
+        const oldSplat = document.getElementById('splat');
+        if (oldSplat) {
+          oldSplat.parentNode.removeChild(oldSplat);
+        }
+
+        // Créer un pool de taches de sang
+        for (let i = 0; i < this.maxSplats; i++) {
+          const splat = document.createElement('div');
+          splat.className = 'splat';
+          splat.style.display = 'none';
+          document.getElementById('game-container').appendChild(splat);
+          this.splatPool.push(splat);
+        }
+      }
+
+      showSplatAnimation(x, y) {
+        // Vérifier si le clic est sur un mur (en utilisant le raycaster)
+        const mouse = new THREE.Vector2(
+          (x / window.innerWidth) * 2 - 1,
+          -(y / window.innerHeight) * 2 + 1
+        );
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.camera);
+
+        // Récupérer les murs pour vérifier si le clic est sur un mur
+        const walls = this.scene.children.filter(child =>
+          child.geometry &&
+          child.geometry.type === 'PlaneGeometry' &&
+          child !== this.ground
+        );
+
+        const wallIntersects = raycaster.intersectObjects(walls);
+
+        // Si le clic est sur un mur, ne pas afficher de tache
+        if (wallIntersects.length > 0) {
+          return;
+        }
+
+        // Trouver une tache disponible dans le pool
+        const splat = this.splatPool.find(s => s.style.display === 'none');
+        if (!splat) return; // Si aucune tache n'est disponible, ne rien faire
+
+        // Calculer la taille en fonction de la position Y (perspective)
+        // Plus bas dans l'écran = plus grand
+        const screenHeight = window.innerHeight;
+        const perspectiveScale = 1 + ((y / screenHeight) * 2); // 1 en haut, 3 en bas (augmenté pour plus d'effet)
+
+        // Réinitialiser la tache
+        splat.style.transition = '';
+        splat.style.opacity = '0';
+        splat.style.transform = `translate(-50%, -50%) scale(0) perspective(800px) rotateX(70deg)`;
+
+        // Positionner la tache
+        splat.style.display = 'block';
+        splat.style.left = x + 'px';
+        splat.style.top = y + 'px';
+
+        // Déclencher l'animation avec la taille adaptée à la perspective
+        requestAnimationFrame(() => {
+          splat.style.transition = 'transform 0.2s cubic-bezier(0.18, 0.89, 0.32, 1.28), opacity 2s ease-out';
+          splat.style.transform = `translate(-50%, -50%) scale(${perspectiveScale}) perspective(800px) rotateX(70deg)`;
+          splat.style.opacity = '0.95';
+
+          // Faire disparaître progressivement
+          setTimeout(() => {
+            splat.style.transition = 'opacity 1.5s ease-out';
+            splat.style.opacity = '0';
+
+            // Cacher la tache une fois l'animation terminée
+            setTimeout(() => {
+              splat.style.display = 'none';
+            }, 1500);
+          }, 2000);
+        });
+      }
+
+      onMouseClick(event) {
+        const mouse = new THREE.Vector2(
+          (event.clientX / window.innerWidth) * 2 - 1,
+          -(event.clientY / window.innerHeight) * 2 + 1
+        );
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, this.camera);
+
+        // Vérifier d'abord si on a cliqué sur un insecte
+        const bugIntersects = raycaster.intersectObjects(this.bugs, true);
+
+        if (bugIntersects.length > 0) {
+          let hitObject = bugIntersects[0].object;
+          let bugToRemove = null;
+
+          while (hitObject && !bugToRemove) {
+            if (this.bugs.includes(hitObject)) {
+              bugToRemove = hitObject;
+            }
+            hitObject = hitObject.parent;
+          }
+
+          if (bugToRemove) {
+            // Animation d'écrasement
+            this.showSplatAnimation(event.clientX, event.clientY);
+
+            // Animation de la coccinelle qui s'écrase
+            const scaleDuration = 200;
+            const startScale = bugToRemove.scale.clone();
+            const startTime = Date.now();
+
+            const animateSquish = () => {
+              const elapsed = Date.now() - startTime;
+              const progress = Math.min(elapsed / scaleDuration, 1);
+
+              bugToRemove.scale.y = startScale.y * (1 - progress * 0.8);
+              bugToRemove.scale.x = startScale.x * (1 + progress * 0.3);
+              bugToRemove.scale.z = startScale.z * (1 + progress * 0.3);
+
+              if (progress < 1) {
+                requestAnimationFrame(animateSquish);
+              } else {
+                this.scene.remove(bugToRemove);
+                this.bugs = this.bugs.filter(bug => bug !== bugToRemove);
+
+                // Décrémenter le score au lieu de l'incrémenter
+                this.score--;
+                this.scoreElement.textContent = `Score: ${this.score}`;
+
+                // Créer une nouvelle coccinelle si nécessaire
+                if (this.bugs.length < 5) {
+                  this.createBugs(1);
+                }
+              }
+            };
+
+            animateSquish();
+          }
+        } else {
+          // Si on n'a pas cliqué sur un insecte, vérifier si on a cliqué sur le sol
+          const groundIntersects = raycaster.intersectObject(this.ground);
+
+          if (groundIntersects.length > 0) {
+            // Si on a cliqué sur le sol, afficher une tache
+            this.showSplatAnimation(event.clientX, event.clientY);
+          }
+        }
+      }
+
+      animate() {
+        requestAnimationFrame(this.animate.bind(this));
+
+        // Mouvement des insectes
+        const time = Date.now() * 0.001;
+        const halfGroundSize = this.groundSize / 2 - 0.5; // Marge de sécurité pour éviter que les insectes ne sortent du sol
+
+        // Mettre à jour la position de chaque insecte
+        this.bugs.forEach(bug => {
+          // Sauvegarder la position actuelle pour pouvoir revenir en arrière en cas de collision
+          const oldPosition = bug.position.clone();
+
+          // Mise à jour de la position
+          bug.position.add(bug.velocity);
+
+          // Faire en sorte que le bug regarde dans la direction de son mouvement
+          if (bug.velocity.length() > 0) {
+            const direction = new THREE.Vector3().copy(bug.velocity).normalize();
+            const angle = Math.atan2(direction.x, direction.z);
+            bug.rotation.y = angle;
+          }
+
+          // Animation des pattes (légère oscillation)
+          const legPhase = time * bug.walkSpeed + bug.legPhase;
+
+          // Trouver et animer toutes les pattes
+          bug.children.forEach(child => {
+            if (child.geometry && child.geometry.type === 'CylinderGeometry') {
+              if (child.position.x < 0) { // Pattes gauches
+                child.rotation.z = Math.PI / 4 + Math.sin(legPhase) * 0.2;
+              } else { // Pattes droites
+                child.rotation.z = -Math.PI / 4 + Math.sin(legPhase + Math.PI) * 0.2;
+              }
+            }
+          });
+
+          // Rebondir sur les bords du sol
+          if (Math.abs(bug.position.x) > halfGroundSize) {
+            bug.velocity.x *= -1;
+            bug.position.x = Math.sign(bug.position.x) * halfGroundSize;
+          }
+
+          if (Math.abs(bug.position.z) > halfGroundSize) {
+            bug.velocity.z *= -1;
+            bug.position.z = Math.sign(bug.position.z) * halfGroundSize;
+          }
+
+          // Vérifier les collisions avec les meubles
+          let collisionDetected = false;
+
+          // Rayon approximatif de l'insecte
+          const bugRadius = 0.2;
+
+          // Vérifier les collisions avec les meubles
+          for (const furniture of this.furniture) {
+            // Vérifier si l'insecte est à l'intérieur du meuble (en tenant compte de la taille du meuble)
+            const dx = Math.abs(bug.position.x - furniture.position.x);
+            const dz = Math.abs(bug.position.z - furniture.position.z);
+
+            if (dx < (furniture.size.x / 2 + bugRadius) && dz < (furniture.size.z / 2 + bugRadius)) {
+              collisionDetected = true;
+              break;
+            }
+          }
+
+          // Vérifier les collisions avec les autres insectes
+          for (const otherBug of this.bugs) {
+            if (otherBug !== bug) {
+              const distance = bug.position.distanceTo(otherBug.position);
+              if (distance < bugRadius * 2) {
+                collisionDetected = true;
+                break;
+              }
+            }
+          }
+
+          // Si une collision est détectée, revenir à l'ancienne position et changer de direction
+          if (collisionDetected) {
+            bug.position.copy(oldPosition);
+
+            // Changer de direction aléatoirement
+            const angle = Math.random() * Math.PI * 2;
+            const speed = bug.velocity.length();
+            bug.velocity.x = Math.cos(angle) * speed;
+            bug.velocity.z = Math.sin(angle) * speed;
+          }
+
+          // Maintenir à la hauteur du sol
+          bug.position.y = 0;
+        });
+
+        this.renderer.render(this.scene, this.camera);
+      }
+    }
+
+    // Initialisation du jeu
+    window.addEventListener('load', () => {
+      new Bug3DGame();
+    });
+  </script>
+</body>
+
+</html>
+    
+  </body>
+  
+</html>
